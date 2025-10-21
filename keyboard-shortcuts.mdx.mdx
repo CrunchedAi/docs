@@ -1,0 +1,103 @@
+---
+title: "New file"
+description: "Description of your new file."
+---
+
+````markdown
+# Keyboard Shortcuts Setup
+
+Simple implementation following [Microsoft's Office Add-ins keyboard shortcuts guidelines](https://learn.microsoft.com/en-us/office/dev/add-ins/design/keyboard-shortcuts).
+
+## The Shortcut
+
+One keyboard shortcut to toggle focus between Crunched and Excel:
+
+| Shortcut | Action |
+|----------|--------|
+| **`Ctrl+Shift+L`** (Win)<br>**`Cmd+Shift+L`** (Mac) | Toggle focus between Crunched and Excel |
+
+**Behavior:**
+- If focus is in **Excel** → Opens taskpane (if closed) and focuses chat input
+- If focus is in **Crunched** → Blurs inputs and returns focus to Excel
+
+## How It Works
+
+1. **Manifest** (`manifest.xml`) → Points to `shortcuts.json` and uses SharedRuntime
+2. **Shortcuts definition** (`public/shortcuts.json`) → Defines the action and key combination
+3. **Action handler** (`src/commands/commands.ts`) → Detects where focus is and toggles it
+4. **React components** → Listen for custom event to focus/blur inputs
+
+**Important Note About SharedRuntime:**
+- `commands.ts` is bundled with `taskpane.html` (SharedRuntime pattern)
+- Shortcuts are registered when the taskpane first opens
+- Once registered, the SharedRuntime (`lifetime="long"`) keeps them active even if taskpane is closed
+- **This means**: Shortcuts work globally after the taskpane has been opened at least once in an Excel session
+
+If you need shortcuts to work immediately on Excel startup (before taskpane ever opens), you'd need a separate commands runtime, but for the toggle-focus use case, the current approach is perfect.
+
+## React Integration
+
+Listen for the toggle focus event in your components:
+
+```tsx
+// In your ChatInput component
+useEffect(() => {
+  const handleToggleFocus = (e: CustomEvent) => {
+    if (e.detail.target === 'addin') {
+      // Focus is moving to add-in - focus the input
+      inputRef.current?.focus();
+    } else if (e.detail.target === 'excel') {
+      // Focus is moving to Excel - blur any focused inputs
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+    }
+  };
+
+  window.addEventListener('crunched:toggle-focus', handleToggleFocus as EventListener);
+  return () => window.removeEventListener('crunched:toggle-focus', handleToggleFocus as EventListener);
+}, []);
+```
+
+The event includes `detail.target` that tells you where focus is moving:
+- `'addin'` - Focus is moving to the add-in
+- `'excel'` - Focus is moving to Excel
+
+## Adding More Shortcuts
+
+To add additional shortcuts:
+
+1. Edit `public/shortcuts.json` - add new action and key combination
+2. Edit `src/commands/commands.ts` - register handler with `Office.actions.associate()`
+3. Listen for the custom event in your React components
+
+## Future: User Customization
+
+When ready to let users customize shortcuts, use `officeKeyboardShortcutsService`:
+
+```tsx
+import { officeKeyboardShortcutsService } from '../services/officeKeyboardShortcutsService';
+
+// Get current shortcuts
+const shortcuts = await officeKeyboardShortcutsService.getCurrentShortcuts();
+
+// Update the shortcut
+await officeKeyboardShortcutsService.updateShortcuts({
+  'TOGGLE_FOCUS': 'Ctrl+Shift+C'
+});
+
+// Validate before applying
+const validation = await officeKeyboardShortcutsService.validateShortcut('Ctrl+Shift+C');
+if (validation.valid) {
+  // Apply the change
+}
+```
+
+The service wraps Office.js APIs and handles conflict detection automatically.
+
+## Requirements
+
+- **SharedRuntime 1.1** ✅ (added to manifests)
+- **KeyboardShortcuts 1.1** (optional, for user customization APIs)
+- Works on: Office web, Windows (Excel 2102+, Word 2408+), Mac (Excel 16.55+, Word 16.88+)
+````
