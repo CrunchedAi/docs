@@ -1,0 +1,227 @@
+---
+title: "New file"
+description: "Description of your new file."
+---
+
+````markdown
+# CPU Profiling
+
+This document explains how to use the CPU profiler to analyze the performance of the agent.
+
+## Overview
+
+The agent includes built-in CPU profiling capabilities using [yappi](https://github.com/sumerc/yappi) (Yet Another Python Profiler). Yappi is particularly well-suited for profiling async Python applications like our agent.
+
+## Quick Start
+
+### Enable Profiling
+
+Set the `ENABLE_CPU_PROFILING` environment variable to enable profiling:
+
+```bash
+export ENABLE_CPU_PROFILING=true
+```
+
+### Run the Agent
+
+Start the backend as usual:
+
+```bash
+cd backend
+python -m nous.app.main
+```
+
+### Generate Profile Data
+
+Interact with the agent through the WebSocket endpoint. Each agent execution will generate a profile file.
+
+### View Results
+
+Profile files are saved in the `profile_data/` directory by default. Each file is named using the thread ID: `{thread_id}_profile.callgrind`
+
+## Configuration
+
+The profiler can be configured using environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ENABLE_CPU_PROFILING` | `false` | Enable/disable CPU profiling |
+| `PROFILE_OUTPUT_DIR` | `./profile_data` | Directory to save profile files |
+| `PROFILE_FORMAT` | `callgrind` | Output format: `callgrind`, `pstat`, or `ystat` |
+
+Example configuration:
+
+```bash
+export ENABLE_CPU_PROFILING=true
+export PROFILE_OUTPUT_DIR=/tmp/agent_profiles
+export PROFILE_FORMAT=callgrind
+```
+
+## Output Formats
+
+### callgrind (Recommended)
+
+The default format. Can be visualized with:
+
+- **KCachegrind** (Linux/Mac)
+- **QCachegrind** (Cross-platform)
+- **Visual Studio Code** with the "Callgrind Viewer" extension
+
+```bash
+# Install KCachegrind on Mac
+brew install qcachegrind
+
+# Open profile
+qcachegrind profile_data/{thread_id}_profile.callgrind
+```
+
+### pstat
+
+Standard Python profiling format. Can be analyzed with:
+
+```python
+import pstats
+from pstats import SortKey
+
+stats = pstats.Stats('profile_data/{thread_id}_profile.pstat')
+stats.strip_dirs()
+stats.sort_stats(SortKey.CUMULATIVE)
+stats.print_stats(20)  # Top 20 functions by cumulative time
+```
+
+### ystat
+
+Yappi's native format. Can be loaded back into yappi:
+
+```python
+import yappi
+
+yappi.set_clock_type("cpu")
+stats = yappi.YFuncStats()
+stats.load('profile_data/{thread_id}_profile.ystat')
+stats.print_all()
+```
+
+## Analyzing Profiles
+
+### Using KCachegrind/QCachegrind
+
+1. Open the `.callgrind` file
+2. Look at the **Call Graph** tab to see function call relationships
+3. Check the **Flat Profile** to find CPU-intensive functions
+4. The **Callers/Callees** view shows which functions call what
+
+Key metrics:
+- **Incl.**: Inclusive time (function + children)
+- **Self**: Exclusive time (function only)
+- **Called**: Number of times function was called
+
+### Using Python pstats
+
+```python
+import pstats
+from pstats import SortKey
+
+# Load the profile
+stats = pstats.Stats('profile_data/{thread_id}_profile.pstat')
+stats.strip_dirs()
+
+# Sort by cumulative time
+stats.sort_stats(SortKey.CUMULATIVE)
+stats.print_stats(50)
+
+# Print callers of a specific function
+stats.print_callers('function_name')
+
+# Print callees of a specific function
+stats.print_callees('function_name')
+```
+
+## Performance Impact
+
+When profiling is **disabled** (default):
+- Zero performance impact
+- No overhead
+
+When profiling is **enabled**:
+- Minimal overhead (~5-10%)
+- Profile files can grow large for long-running operations
+- Monitor disk space in `PROFILE_OUTPUT_DIR`
+
+## Best Practices
+
+1. **Don't profile in production** - profiling adds overhead and generates large files
+2. **Profile specific scenarios** - enable profiling only when investigating performance issues
+3. **Clean up profile files** - they can accumulate quickly during development
+4. **Use callgrind format** - best visualization tools available
+5. **Focus on cumulative time** - shows where the agent spends most time including calls to other functions
+6. **Look for unexpected calls** - high call counts may indicate inefficiency
+
+## Troubleshooting
+
+### No profile files generated
+
+Check that:
+1. `ENABLE_CPU_PROFILING=true` is set
+2. The agent is actually executing (check WebSocket connection)
+3. The output directory exists and is writable
+4. Check logs for profiler messages
+
+### Profile files are huge
+
+This is normal for long-running operations. Consider:
+1. Testing with shorter interactions
+2. Using a larger disk or different `PROFILE_OUTPUT_DIR`
+3. Compressing old profiles: `gzip profile_data/*.callgrind`
+
+### Can't open .callgrind files
+
+Install a viewer:
+- Mac: `brew install qcachegrind`
+- Linux: `apt-get install kcachegrind` or `yum install kcachegrind`
+- Windows: Use WSL with QCachegrind or VSCode extension
+
+## Example Workflow
+
+```bash
+# 1. Enable profiling
+export ENABLE_CPU_PROFILING=true
+export PROFILE_OUTPUT_DIR=./my_profiles
+
+# 2. Start the backend
+cd backend
+python -m nous.app.main
+
+# 3. Interact with agent (creates profile files)
+
+# 4. Analyze the results
+qcachegrind my_profiles/some-thread-id_profile.callgrind
+
+# 5. Clean up when done
+rm -rf my_profiles/
+export ENABLE_CPU_PROFILING=false
+```
+
+## Integration with CI/CD
+
+You can use profiling in CI to detect performance regressions:
+
+```python
+import yappi
+import pstats
+
+# Load two profile files
+old_stats = pstats.Stats('baseline_profile.pstat')
+new_stats = pstats.Stats('current_profile.pstat')
+
+# Compare cumulative times for key functions
+# Fail build if performance degrades significantly
+```
+
+## Additional Resources
+
+- [yappi documentation](https://github.com/sumerc/yappi)
+- [Python profilers comparison](https://docs.python.org/3/library/profile.html)
+- [KCachegrind handbook](https://kcachegrind.github.io/html/Home.html)
+
+````
